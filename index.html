@@ -48,7 +48,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getDatabase, ref, push, remove, set, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        // 監視用の onValue を追加
+        import { getDatabase, ref, push, remove, set, get, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const _k = 0x2a;
         const _d = (a) => a.map(x => String.fromCharCode(x ^ _k)).join('');
@@ -77,6 +78,7 @@
         };
 
         let _authReady = false;
+        let _unsubscribe = null; // リスナーの解除用
 
         try {
             const _ap = initializeApp(_fc);
@@ -360,19 +362,7 @@
                     const newRef = push(ref(_db, _rootPath));
                     await set(newRef, _it);
                     
-                    // ★ 書き込みが完了したら、本当にDBに保存されたか再取得して確認
-                    _bt.textContent = '確認中...';
-                    const verifySnap = await get(newRef);
-                    if (!verifySnap.exists()) {
-                        throw new Error("データベースへの保存が確認できませんでした。");
-                    }
-
-                    // 成功したらリストを更新
-                    _gm.unshift({ _id: newRef.key, ..._it });
-                    _gm.sort((a, b) => (b.t || 0) - (a.t || 0));
-                    _rnd();
-                    
-                    alert("投稿に成功し、データベースへの保存も確認できました！");
+                    alert("投稿に成功しました！");
                     _cl();
                 } catch (er) {
                     console.error("Post Error:", er);
@@ -406,14 +396,21 @@
                 }, 250);
             };
 
+            // 既存のリスナーがあれば解除
+            if (_unsubscribe) {
+                _unsubscribe();
+                _unsubscribe = null;
+            }
+
+            // ★ リアルタイム監視(onValue)でデータを取得する
             if (_db && _us) {
-                get(ref(_db, _rootPath)).then((sn) => {
+                _unsubscribe = onValue(ref(_db, _rootPath), (sn) => {
                     const _ar = [];
                     sn.forEach(d => _ar.push({ _id: d.key, ...d.val() }));
                     _ar.sort((a, b) => (b.t || 0) - (a.t || 0));
                     _gm = _ar;
                     _rnd();
-                }).catch((er) => {
+                }, (er) => {
                     console.error("Read Error:", er);
                     const _gr = _el('_g');
                     if (_gr) {
