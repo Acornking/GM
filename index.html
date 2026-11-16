@@ -48,7 +48,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getDatabase, ref, onValue, push, remove, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        // ★ get をインポートに追加
+        import { getDatabase, ref, push, remove, set, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const _k = 0x2a;
         const _d = (a) => a.map(x => String.fromCharCode(x ^ _k)).join('');
@@ -77,7 +78,6 @@
         };
 
         let _authReady = false;
-        let _listenerRef = null;
 
         try {
             const _ap = initializeApp(_fc);
@@ -212,20 +212,19 @@
             return 0;
         };
 
-        // ===== 画像圧縮（DB保存用：60px / JPEG 0.5 で数KBに） =====
         const _rz = (fl) => new Promise((ok, ng) => {
             const rd = new FileReader();
             rd.onload = (ev) => {
                 const img = new Image();
                 img.onload = () => {
                     const cv = document.createElement('canvas');
-                    const mx = 60; // データベース制限対策のため60px
+                    const mx = 64;
                     let w = img.width, h = img.height;
                     if (w > h) { if (w > mx) { h = Math.round(h * mx / w); w = mx; } }
                     else { if (h > mx) { w = Math.round(w * mx / h); h = mx; } }
                     cv.width = w; cv.height = h;
                     cv.getContext('2d').drawImage(img, 0, 0, w, h);
-                    ok(cv.toDataURL('image/jpeg', 0.5)); // 0.5で高圧縮
+                    ok(cv.toDataURL('image/jpeg', 0.5));
                 };
                 img.onerror = ng;
                 img.src = ev.target.result;
@@ -351,7 +350,6 @@
                 _bt.disabled = true; _bt.textContent = '送信中...';
 
                 try {
-                    // 画像は圧縮済みのものをそのまま送る（60pxで数KB）
                     const _it = { 
                         n, 
                         u: _url(u), 
@@ -360,11 +358,9 @@
                         owner: _us.uid 
                     };
                     
-                    // 1. DBに書き込む
                     const newRef = push(ref(_db, _rootPath));
                     await set(newRef, _it);
                     
-                    // 2. 成功したらローカル配列にも追加して即時反映
                     _gm.unshift({ _id: newRef.key, ..._it });
                     _gm.sort((a, b) => (b.t || 0) - (a.t || 0));
                     _rnd();
@@ -403,20 +399,20 @@
                 }, 250);
             };
 
-            if (_listenerRef && typeof _listenerRef === 'function') {
-                try { _listenerRef(); } catch (e) {}
-                _listenerRef = null;
-            }
-
             if (_db && _us) {
-                _listenerRef = onValue(ref(_db, _rootPath), (sn) => {
+                // ★ onValueからget(一回だけ取得)に変更し、確実に最新を取得する
+                get(ref(_db, _rootPath)).then((sn) => {
                     const _ar = [];
                     sn.forEach(d => _ar.push({ _id: d.key, ...d.val() }));
                     _ar.sort((a, b) => (b.t || 0) - (a.t || 0));
                     _gm = _ar; _rnd();
-                }, (er) => {
+                }).catch((er) => {
                     console.error("Read Error:", er);
-                    _rnd();
+                    // 画面上にもエラーを表示して原因を可視化する
+                    const _gr = _el('_g');
+                    if (_gr) {
+                        _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-24 text-rose-400 bg-rose-500/10 rounded-3xl border border-rose-500/20"><p class="text-sm font-bold mb-2">データの読み込みに失敗しました</p><p class="text-xs font-mono bg-slate-900 p-2 rounded-lg break-all">${_esc(er.message)}</p><p class="text-xs mt-4 text-slate-400">Firebaseのセキュリティルールを確認してください。</p></div>`;
+                    }
                 });
             } else {
                 _rnd();
