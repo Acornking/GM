@@ -48,7 +48,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getDatabase, ref, onValue, push, remove, set, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        import { getDatabase, ref, onValue, push, remove, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const _k = 0x2a;
         const _d = (a) => a.map(x => String.fromCharCode(x ^ _k)).join('');
@@ -79,7 +79,6 @@
         let _authReady = false;
         let _listenerRef = null;
 
-        // 初期化を待機
         try {
             const _ap = initializeApp(_fc);
             _au = getAuth(_ap);
@@ -213,19 +212,20 @@
             return 0;
         };
 
+        // ===== 画像圧縮（DB保存用：60px / JPEG 0.5 で数KBに） =====
         const _rz = (fl) => new Promise((ok, ng) => {
             const rd = new FileReader();
             rd.onload = (ev) => {
                 const img = new Image();
                 img.onload = () => {
                     const cv = document.createElement('canvas');
-                    const mx = 128;
+                    const mx = 60; // データベース制限対策のため60px
                     let w = img.width, h = img.height;
                     if (w > h) { if (w > mx) { h = Math.round(h * mx / w); w = mx; } }
                     else { if (h > mx) { w = Math.round(w * mx / h); h = mx; } }
                     cv.width = w; cv.height = h;
                     cv.getContext('2d').drawImage(img, 0, 0, w, h);
-                    ok(cv.toDataURL('image/jpeg', 0.7));
+                    ok(cv.toDataURL('image/jpeg', 0.5)); // 0.5で高圧縮
                 };
                 img.onerror = ng;
                 img.src = ev.target.result;
@@ -351,29 +351,25 @@
                 _bt.disabled = true; _bt.textContent = '送信中...';
 
                 try {
-                    const _it = { n, u: _url(u), t: Date.now() };
-                    if (_db && _us) {
-                        if (_im) {
-                            if (_im.length > 900000) throw new Error('画像サイズが大きすぎます');
-                            _it.i = _im;
-                        } else {
-                            _it.i = '🎮';
-                        }
-                        _it.owner = _us.uid;
-
-                        const newRef = push(ref(_db, _rootPath));
-                        await set(newRef, _it);
-                        // 即時反映
-                        _gm.unshift({ _id: newRef.key, ..._it });
-                        _gm.sort((a, b) => (b.t || 0) - (a.t || 0));
-                        _rnd();
-                        alert("投稿に成功しました！");
-                    } else {
-                        _it._id = 'l_' + Date.now();
-                        _it.i = _im || '🎮';
-                        _gm.unshift(_it); _rnd();
-                        alert("ローカルに保存しました（オンライン未接続）");
-                    }
+                    // 画像は圧縮済みのものをそのまま送る（60pxで数KB）
+                    const _it = { 
+                        n, 
+                        u: _url(u), 
+                        t: Date.now(), 
+                        i: _im || '🎮', 
+                        owner: _us.uid 
+                    };
+                    
+                    // 1. DBに書き込む
+                    const newRef = push(ref(_db, _rootPath));
+                    await set(newRef, _it);
+                    
+                    // 2. 成功したらローカル配列にも追加して即時反映
+                    _gm.unshift({ _id: newRef.key, ..._it });
+                    _gm.sort((a, b) => (b.t || 0) - (a.t || 0));
+                    _rnd();
+                    
+                    alert("投稿に成功しました！");
                     _cl();
                 } catch (er) {
                     console.error("Post Error:", er);
@@ -413,7 +409,6 @@
             }
 
             if (_db && _us) {
-                // リスナーを登録し、読み込み時は既存データを上書き
                 _listenerRef = onValue(ref(_db, _rootPath), (sn) => {
                     const _ar = [];
                     sn.forEach(d => _ar.push({ _id: d.key, ...d.val() }));
