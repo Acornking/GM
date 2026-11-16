@@ -70,10 +70,51 @@
 
         let _authReady = false;
 
+        // --- IndexedDBによる画像保存の仕組み ---
+        const _idbName = 'PortalImageDB';
+        const _idbStore = 'images';
+        let _idb = null;
+
+        const _initDB = () => {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(_idbName, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(_idbStore)) {
+                        db.createObjectStore(_idbStore);
+                    }
+                };
+                req.onsuccess = (e) => { _idb = e.target.result; resolve(); };
+                req.onerror = (e) => reject(e);
+            });
+        };
+
+        const _saveImage = (id, base64) => {
+            return new Promise((resolve, reject) => {
+                if (!_idb) return resolve(); // DB未準備ならスキップ
+                const tx = _idb.transaction(_idbStore, 'readwrite');
+                tx.objectStore(_idbStore).put(base64, id);
+                tx.oncomplete = resolve;
+                tx.onerror = reject;
+            });
+        };
+
+        const _loadImage = (id) => {
+            return new Promise((resolve) => {
+                if (!_idb) return resolve(null);
+                const tx = _idb.transaction(_idbStore, 'readonly');
+                const req = tx.objectStore(_idbStore).get(id);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+            });
+        };
+        // ------------------------------------
+
         try {
             const _ap = initializeApp(_fc);
             _au = getAuth(_ap);
             _db = getDatabase(_ap);
+            await _initDB(); // IndexedDBの準備
             const _cr = await signInAnonymously(_au);
             _us = _cr.user;
             _authReady = true;
@@ -224,13 +265,13 @@
                 const img = new Image();
                 img.onload = () => {
                     const cv = document.createElement('canvas');
-                    const mx = 64; // 極限まで小さく
+                    const mx = 128; 
                     let w = img.width, h = img.height;
                     if (w > h) { if (w > mx) { h = Math.round(h * mx / w); w = mx; } }
                     else { if (h > mx) { w = Math.round(w * mx / h); h = mx; } }
                     cv.width = w; cv.height = h;
                     cv.getContext('2d').drawImage(img, 0, 0, w, h);
-                    ok(cv.toDataURL('image/jpeg', 0.5));
+                    ok(cv.toDataURL('image/jpeg', 0.7));
                 };
                 img.onerror = ng;
                 img.src = ev.target.result;
@@ -260,17 +301,34 @@
                 _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-24 text-slate-400"><div class="w-16 h-16 rounded-3xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center text-2xl mb-3">🎮</div><p class="text-sm font-medium text-slate-300">${_gm.length ? '該当するゲームが見つかりません' : 'まだ投稿がありません'}</p><p class="text-xs text-slate-500 mt-1">${_gm.length ? '別のキーワードで検索してください' : '右上の「＋ 投稿」からゲームを追加できます'}</p></div>`;
                 return;
             }
-            _ls.forEach((it) => {
+            _ls.forEach(async (it) => {
                 const _wr = document.createElement('div');
                 _wr.className = 'relative group';
                 const _cd = document.createElement('a');
                 _cd.href = _url(it.u);
                 _cd.target = '_blank';
                 _cd.rel = 'noopener noreferrer';
-                const _ic = (it.i || '').trim();
-                const _isImg = /^(https?:\/\/|data:image\/)/i.test(_ic);
                 _cd.className = '_it flex flex-col items-center cursor-pointer text-white no-underline';
-                _cd.innerHTML = `<div class="_sq shadow-lg border ${_ad ? 'border-rose-500/40' : 'border-white/10'} bg-slate-900/80">${_isImg ? `<img src="${_esc(_ic)}" alt="" class="w-full h-full object-contain block p-1.5" onerror="this.outerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl\\'>🎮</div>'">` : `<div class="w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl">${_esc(_ic || '🎮')}</div>`}</div><div class="w-full text-center font-bold text-xs sm:text-sm text-slate-100 group-hover:text-sky-300 truncate mt-2 px-1 transition-colors">${_esc(it.n)}</div>`;
+                
+                let _ic = (it.i || '').trim();
+                let _isImg = /^(https?:\/\/|data:image\/)/i.test(_ic);
+                let _imgHtml = '';
+
+                if (_isImg) {
+                    _imgHtml = `<img src="${_esc(_ic)}" alt="" class="w-full h-full object-contain block p-1.5" onerror="this.outerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl\\'>🎮</div>'">`;
+                } else if (_ic === 'local') {
+                    const localSrc = await _loadImage(it._id);
+                    if (localSrc) {
+                        _imgHtml = `<img src="${_esc(localSrc)}" alt="" class="w-full h-full object-contain block p-1.5" onerror="this.outerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl\\'>🎮</div>'">`;
+                    } else {
+                        _imgHtml = `<div class="w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl">🎮</div>`;
+                    }
+                } else {
+                    _imgHtml = `<div class="w-full h-full flex items-center justify-center bg-slate-800 text-4xl sm:text-5xl">${_esc(_ic || '🎮')}</div>`;
+                }
+
+                _cd.innerHTML = `<div class="_sq shadow-lg border ${_ad ? 'border-rose-500/40' : 'border-white/10'} bg-slate-900/80">${_imgHtml}</div><div class="w-full text-center font-bold text-xs sm:text-sm text-slate-100 group-hover:text-sky-300 truncate mt-2 px-1 transition-colors">${_esc(it.n)}</div>`;
+                
                 _wr.appendChild(_cd);
                 if (_ad) {
                     const _dl = document.createElement('button');
@@ -342,12 +400,27 @@
                 _bt.disabled = true; _bt.textContent = '送信中...';
                 
                 try {
-                    const _it = { n, i: _im || '🎮', u: _url(u), t: Date.now() };
+                    const _it = { n, u: _url(u), t: Date.now() };
+                    let newId = null;
+
                     if (_db && _us) {
-                        await set(push(ref(_db, _rootPath)), _it);
+                        // DBの容量制限を防ぐため、画像データはDBに送らずIndexedDBへ保存する
+                        const newRef = push(ref(_db, _rootPath));
+                        newId = newRef.key;
+                        
+                        if (_im) {
+                            _it.i = 'local'; // DBには「ローカルに画像がある」という目印だけ保存
+                            await _saveImage(newId, _im); // 画像はブラウザのIndexedDBに保存
+                        } else {
+                            _it.i = '🎮';
+                        }
+                        
+                        await set(newRef, _it);
                         alert("投稿に成功しました！");
                     } else {
                         _it._id = 'l_' + Date.now();
+                        if (_im) { _it.i = 'local'; await _saveImage(_it._id, _im); }
+                        else { _it.i = '🎮'; }
                         _gm.unshift(_it); _rnd();
                         alert("ローカルに保存しました（オンライン未接続）");
                     }
