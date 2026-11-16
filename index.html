@@ -48,7 +48,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getDatabase, ref, push, remove, set, get, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        import { getDatabase, ref, push, remove, set, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const _k = 0x2a;
         const _d = (a) => a.map(x => String.fromCharCode(x ^ _k)).join('');
@@ -63,7 +63,6 @@
 
         let _ex = '', _dn = false, _db = null, _au = null, _us = null, _gm = [], _kw = '', _im = '', _ad = false, _cf = null;
         
-        // DBのパス
         const _rootPath = 'portal_games'; 
         
         const _fc = {
@@ -361,11 +360,19 @@
                     const newRef = push(ref(_db, _rootPath));
                     await set(newRef, _it);
                     
+                    // ★ 書き込みが完了したら、本当にDBに保存されたか再取得して確認
+                    _bt.textContent = '確認中...';
+                    const verifySnap = await get(newRef);
+                    if (!verifySnap.exists()) {
+                        throw new Error("データベースへの保存が確認できませんでした。");
+                    }
+
+                    // 成功したらリストを更新
                     _gm.unshift({ _id: newRef.key, ..._it });
                     _gm.sort((a, b) => (b.t || 0) - (a.t || 0));
                     _rnd();
                     
-                    alert("投稿に成功しました！");
+                    alert("投稿に成功し、データベースへの保存も確認できました！");
                     _cl();
                 } catch (er) {
                     console.error("Post Error:", er);
@@ -399,22 +406,18 @@
                 }, 250);
             };
 
-            // データベースの読み込みテスト
             if (_db && _us) {
-                console.log("Fetching data from:", _rootPath);
                 get(ref(_db, _rootPath)).then((sn) => {
                     const _ar = [];
                     sn.forEach(d => _ar.push({ _id: d.key, ...d.val() }));
                     _ar.sort((a, b) => (b.t || 0) - (a.t || 0));
                     _gm = _ar;
-                    console.log("Data fetched successfully:", _gm.length, "items");
                     _rnd();
                 }).catch((er) => {
                     console.error("Read Error:", er);
-                    // エラーを画面に表示
                     const _gr = _el('_g');
                     if (_gr) {
-                        _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-12 text-rose-400 bg-rose-500/10 rounded-3xl border border-rose-500/20"><p class="text-sm font-bold mb-2">データベースの読み込みに失敗しました</p><p class="text-xs font-mono bg-slate-900 p-3 rounded-lg break-all max-w-lg text-center">${_esc(er.message)}</p><p class="text-xs mt-4 text-slate-400 text-center">Firebaseコンソールの「Realtime Database」→「ルール」タブで<br>ルールが「公開」されているか確認してください。</p></div>`;
+                        _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-12 text-rose-400 bg-rose-500/10 rounded-3xl border border-rose-500/20"><p class="text-sm font-bold mb-2">データベースの読み込みに失敗しました</p><p class="text-xs font-mono bg-slate-900 p-3 rounded-lg break-all max-w-lg text-center">${_esc(er.message)}</p><p class="text-xs mt-4 text-slate-400 text-center">Firebaseの「ルール」が公開されているか確認してください。</p></div>`;
                     }
                 });
             } else {
