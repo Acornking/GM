@@ -48,8 +48,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // ★ get をインポートに追加
-        import { getDatabase, ref, push, remove, set, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        import { getDatabase, ref, push, remove, set, get, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const _k = 0x2a;
         const _d = (a) => a.map(x => String.fromCharCode(x ^ _k)).join('');
@@ -64,6 +63,7 @@
 
         let _ex = '', _dn = false, _db = null, _au = null, _us = null, _gm = [], _kw = '', _im = '', _ad = false, _cf = null;
         
+        // DBのパス
         const _rootPath = 'portal_games'; 
         
         const _fc = {
@@ -399,19 +399,22 @@
                 }, 250);
             };
 
+            // データベースの読み込みテスト
             if (_db && _us) {
-                // ★ onValueからget(一回だけ取得)に変更し、確実に最新を取得する
+                console.log("Fetching data from:", _rootPath);
                 get(ref(_db, _rootPath)).then((sn) => {
                     const _ar = [];
                     sn.forEach(d => _ar.push({ _id: d.key, ...d.val() }));
                     _ar.sort((a, b) => (b.t || 0) - (a.t || 0));
-                    _gm = _ar; _rnd();
+                    _gm = _ar;
+                    console.log("Data fetched successfully:", _gm.length, "items");
+                    _rnd();
                 }).catch((er) => {
                     console.error("Read Error:", er);
-                    // 画面上にもエラーを表示して原因を可視化する
+                    // エラーを画面に表示
                     const _gr = _el('_g');
                     if (_gr) {
-                        _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-24 text-rose-400 bg-rose-500/10 rounded-3xl border border-rose-500/20"><p class="text-sm font-bold mb-2">データの読み込みに失敗しました</p><p class="text-xs font-mono bg-slate-900 p-2 rounded-lg break-all">${_esc(er.message)}</p><p class="text-xs mt-4 text-slate-400">Firebaseのセキュリティルールを確認してください。</p></div>`;
+                        _gr.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center py-12 text-rose-400 bg-rose-500/10 rounded-3xl border border-rose-500/20"><p class="text-sm font-bold mb-2">データベースの読み込みに失敗しました</p><p class="text-xs font-mono bg-slate-900 p-3 rounded-lg break-all max-w-lg text-center">${_esc(er.message)}</p><p class="text-xs mt-4 text-slate-400 text-center">Firebaseコンソールの「Realtime Database」→「ルール」タブで<br>ルールが「公開」されているか確認してください。</p></div>`;
                     }
                 });
             } else {
